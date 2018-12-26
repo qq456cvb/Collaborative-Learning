@@ -26,13 +26,14 @@ beta = 0.5
 
 def densenet_block(input, num_layers, growth, keep_prob):
     crt = input
+    tmp = None
     for i in range(num_layers):
         with tf.variable_scope('layer%d' % i):
             tmp = BNReLU(crt)
             tmp = Conv2D('conv%d' % i, tmp, growth, kernel_size=3, strides=1, use_bias=False)
             tmp = Dropout('dropout%d' % i, tmp, keep_prob=keep_prob)
             crt = tf.concat((crt, tmp), axis=1)
-    return crt
+    return tmp
 
 
 def recursive_split_block(input, block_fun, splits, depth):
@@ -53,7 +54,7 @@ def recursive_split_block(input, block_fun, splits, depth):
     return outputs
 
 
-class ResNet_Cifar(ModelDesc):
+class DenseNet_Cifar(ModelDesc):
     def inputs(self):
         return [tf.placeholder(tf.float32, [None, 32, 32, 3], 'input'),
                 tf.placeholder(tf.float32, [None, CLASS_NUM], 'label')]
@@ -101,6 +102,8 @@ class ResNet_Cifar(ModelDesc):
             for i, logits in enumerate(heads_logits):
                 hard_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=label, logits=logits))
                 q = tf.nn.softmax((tf.add_n(heads_logits) - logits) / (len(heads_logits) - 1) / T)
+                # TODO: fix target q?
+                q = tf.stop_gradient(q)
                 soft_loss = -tf.reduce_mean(tf.reduce_sum(q * tf.nn.log_softmax(logits / T), axis=-1))
                 loss = beta * hard_loss + (1 - beta) * soft_loss
                 costs.append(loss)
@@ -162,7 +165,7 @@ if __name__ == '__main__':
     dataset_test = get_data('test')
 
     config = TrainConfig(
-        model=ResNet_Cifar(),
+        model=DenseNet_Cifar(),
         data=QueueInput(dataset_train),
         callbacks=[
             ModelSaver(),
